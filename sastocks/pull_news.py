@@ -1,21 +1,16 @@
 # Get required components
 import os
-from typing import List
+from datetime import datetime, timedelta
+from typing import List, Optional
 
-import requests
-
+from polygon_client import PolygonClient
 from sastocks.config import DatabaseSession
 from sastocks.logger import logger
+from sastocks.models import NewsArticle
 from sastocks.models import Ticker
 
 # Load API keys from CSV
 polygon_key = os.environ.get("POLYGON_API_KEY")
-
-# Polygon.io API setup
-polygon_url = (
-    "https://api.polygon.io/v2/reference/news?ticker=AA&published_utc.gte=2021-03-30T00:00:00Z&limit.max=10000&sort=published_utc&apiKey="
-    + polygon_key
-)
 
 
 def load_tickers() -> List[Ticker]:
@@ -29,11 +24,8 @@ def load_tickers() -> List[Ticker]:
         return tickers
 
 
-from sastocks.models import NewsArticle
-
-
 def save_news_to_db(
-    date: str,
+    date: datetime,
     ticker: Ticker,
     title: str,
     description: str,
@@ -41,8 +33,8 @@ def save_news_to_db(
     author: str,
     keywords: str,
     publisher: str,
-    image_url: str,
-    amp_url: str,
+    image_url: Optional[str] = None,
+    amp_url: Optional[str] = None,
 ):
     """Save news article to the database using the NewsArticle model.
 
@@ -90,15 +82,25 @@ def process_api_response(api_response, ticker: Ticker):
         )
         return
     for result in api_response["results"]:
-        date = result["published_utc"]
+        date = datetime.strptime(result["published_utc"], "%Y-%m-%dT%H:%M:%SZ").date()
         title = result["title"]
         description = result["description"]
         article_url = result["article_url"]
-        author = result["author"]
-        keywords = ", ".join(result["keywords"])
-        publisher = result["publisher"]["name"]
-        image_url = result["image_url"]
-        amp_url = result["amp_url"]
+        author = result.get(
+            "author", "Unknown"
+        )  # Use a default value if author is not provided
+        keywords = ", ".join(
+            result.get("keywords", [])
+        )  # Join keywords into a string, use empty list if not provided
+        publisher = result["publisher"].get(
+            "name", "Unknown"
+        )  # Use a default value if publisher name is not provided
+        image_url = result.get(
+            "image_url", ""
+        )  # Use an empty string if image_url is not provided
+        amp_url = result.get(
+            "amp_url", ""
+        )  # Use an empty string if amp_url is not provided
         save_news_to_db(
             date,
             ticker,
@@ -113,8 +115,20 @@ def process_api_response(api_response, ticker: Ticker):
         )
 
 
-def pull_news():
+def pull_news(timestamp: str = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")):
     """Pull news for all tickers and save them to the database."""
+    # Ensure the POLYGON_API_KEY is available
+    if not polygon_key:
+        raise EnvironmentError("POLYGON_API_KEY environment variable not found.")
+
+    # Instantiate PolygonClient
+    polygon_client = PolygonClient(api_key=polygon_key)
+
+    # Use provided timestamp or set to yesterday's date if not provided
+    if not timestamp:
+        timestamp = (datetime.utcnow() - timedelta(days=1)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
 
     # Load the tickers
     tickers = load_tickers()
@@ -126,7 +140,9 @@ def pull_news():
 
         # Execute the request, get the response and process it
         try:
-            api_response = requests.get(polygon_url.format(ticker=ticker.symbol)).json()
+            api_response = polygon_client.get_news(
+                ticker.symbol, published_utc=timestamp
+            )
             process_api_response(api_response, ticker)
         except Exception as e:
             logger.error(f"An error occurred while processing {ticker.symbol}: {e}")

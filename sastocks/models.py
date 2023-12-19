@@ -32,7 +32,7 @@ class NewsArticle(Base):
     author: Mapped[str] = mapped_column(String(100))
     keywords: Mapped[str] = mapped_column(String(500))
     publisher: Mapped[str] = mapped_column(String(100))
-    image_url: Mapped[str] = mapped_column(String(500))
+    image_url: Mapped[str] = mapped_column(String(500), nullable=True)
     amp_url: Mapped[str] = mapped_column(String(500))
 
     ticker_id = Column(Integer, ForeignKey("ticker.id"))
