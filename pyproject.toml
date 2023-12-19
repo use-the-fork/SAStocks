@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "sastocks"
+version = "0.1.0"
+description = ""
+authors = ["Your Name <you@example.com>"]
+readme = "README.md"
+
+[tool.poetry.scripts]
+sastocks = 'sastocks.cli:cli'
+
+[tool.poetry.dependencies]
+python = ">=3.10,<3.12"
+langchain = "^0.0.350"
+nltk = "^3.8.1"
+SQLAlchemy = "^2.0.23"
+click = "^8.1.7"
+pydantic = "^2.5.2"
+python-dotenv = "^1.0.0"
+yfinance = "^0.2.33"
+
+[tool.poetry.group.dev.dependencies]
+black = "^23.12.0"
+mentat = "^1.0.6"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
