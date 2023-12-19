@@ -3,11 +3,11 @@ import os
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from polygon_client import PolygonClient
 from sastocks.config import DatabaseSession
 from sastocks.logger import logger
 from sastocks.models import NewsArticle
 from sastocks.models import Ticker
+from sastocks.polygon_client import PolygonClient
 
 # Load API keys from CSV
 polygon_key = os.environ.get("POLYGON_API_KEY")
@@ -115,7 +115,11 @@ def process_api_response(api_response, ticker: Ticker):
         )
 
 
-def pull_news(timestamp: str = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")):
+def pull_news(
+    timestamp: str = (datetime.utcnow() - timedelta(days=1)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    ),
+):
     """Pull news for all tickers and save them to the database."""
     # Ensure the POLYGON_API_KEY is available
     if not polygon_key:

@@ -1,8 +1,9 @@
-import yfinance as yf
-
 from sastocks.config import DatabaseSession
 from sastocks.logger import logger
 from sastocks.models import Ticker
+from sastocks.polygon_client import PolygonClient
+
+polygon_client = PolygonClient()
 
 
 def add_ticker(symbol: str):
@@ -14,12 +15,11 @@ def add_ticker(symbol: str):
     Returns:
         None
     """
-    yf_symbol = yf.Ticker(symbol)
-
     try:
-        # Validate the symbol by checking if it has a regular market price
-        if "longName" not in yf_symbol.info:
-            logger.error(f"Invalid symbol: {symbol}")
+        # Use PolygonClient to get ticker details
+        ticker_details = polygon_client.get_ticker_details(symbol)
+        if ticker_details.get("status") != "OK":
+            logger.error(f"Invalid symbol or error retrieving details: {symbol}")
             return
     except ValueError as e:
         logger.error(f"Error validating symbol: {symbol}. Exception: {e}")
@@ -33,12 +33,8 @@ def add_ticker(symbol: str):
                 logger.info(f"Symbol '{symbol}' already exists in the database.")
                 return
 
-            # Extract the name from yfinance symbol info
-            name = (
-                yf_symbol.info.get("longName")
-                or yf_symbol.info.get("shortName")
-                or "Unknown"
-            )
+            # Extract the name and other details from PolygonClient ticker details
+            name = ticker_details["results"].get("name", "Unknown")
             new_ticker = Ticker(symbol=symbol, name=name)
             session.add(new_ticker)
             session.commit()

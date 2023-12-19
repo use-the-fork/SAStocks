@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
-from polygon_client import PolygonClient, BASE_URL
+from sastocks.polygon_client import PolygonClient, BASE_URL
 
 
 @pytest.fixture
