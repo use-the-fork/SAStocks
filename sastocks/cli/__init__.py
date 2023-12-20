@@ -1,6 +1,7 @@
 import click
 
 from sastocks.config import config
+from sastocks.pull_financials import pull_financials
 from sastocks.pull_news import pull_news
 from sastocks.tickers import add_ticker
 
@@ -50,3 +51,14 @@ def add_ticker_command(symbol):
 def pull_news_command(date):
     """Pull news for a specified date or for yesterday if no date is provided."""
     pull_news(timestamp=date)
+
+
+@cli.command("pull-financials")
+@click.option(
+    "--date",
+    type=str,
+    help="Specify a date to pull financial data for (format: YYYY-MM-DD)",
+)
+def pull_financials_command(date):
+    """Pull financial data for all tickers for a specified date or for today if no date is provided."""
+    pull_financials(date=date)

@@ -163,3 +163,37 @@ def test_get_open_close(mock_get, polygon_client):
     with pytest.raises(ValueError) as context_date:
         polygon_client.get_open_close("AAPL", "invalid-date")
     assert "Invalid date format" in str(context_date.value)
+
+
+@patch("requests.get")
+def test_get_rsi(mock_get, polygon_client):
+    # Arrange
+    mock_get.return_value.json.return_value = {
+        "status": "OK",
+        "results": [{"value": 50.0}],
+    }
+
+    # Act
+    response = polygon_client.get_rsi(ticker="AAPL")
+
+    # Assert
+    mock_get.assert_called_once()
+    assert response["status"] == "OK"
+    assert response["results"][0]["value"] == 50.0
+
+
+@patch("requests.get")
+def test_get_macd(mock_get, polygon_client):
+    # Arrange
+    mock_get.return_value.json.return_value = {
+        "status": "OK",
+        "results": [{"value": 1.5}],
+    }
+
+    # Act
+    response = polygon_client.get_macd(ticker="AAPL")
+
+    # Assert
+    mock_get.assert_called_once()
+    assert response["status"] == "OK"
+    assert response["results"][0]["value"] == 1.5
