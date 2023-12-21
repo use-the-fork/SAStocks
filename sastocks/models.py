@@ -4,9 +4,39 @@ from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.orm import relationship
 
+from sastocks.database import DatabaseSession, engine
+
 
 class Base(DeclarativeBase):
-    pass
+    @classmethod
+    def create(cls, **kw):
+        with DatabaseSession() as s:
+            obj = cls(**kw)
+            s.add(obj)
+            s.commit()
+            s.refresh(obj)
+            return obj
+
+    @classmethod
+    def update(cls, id, **kwargs):
+        with DatabaseSession() as s:
+            obj = s.query(cls).get(id)
+            for key, value in kwargs.items():
+                setattr(obj, key, value)
+            s.commit()
+            s.refresh(obj)
+            return obj
+
+    @classmethod
+    def remove(cls, id):
+        with DatabaseSession() as s:
+            obj = s.query(cls).get(id)
+            s.delete(obj)
+            s.commit()
+
+    @classmethod
+    def query(cls):
+        return DatabaseSession().query(cls)
 
 
 class Ticker(Base):
@@ -33,6 +63,9 @@ class NewsArticle(Base):
     publisher: Mapped[str] = mapped_column(String)
     image_url: Mapped[str] = mapped_column(String, nullable=True)
     amp_url: Mapped[str] = mapped_column(String)
+    vader_sentiment: Mapped[str] = Column(String)
+    gpt_sentiment: Mapped[str] = Column(String)
+    gpt_response: Mapped[str] = Column(String)
 
     ticker_id = Column(Integer, ForeignKey("ticker.id"))
     ticker: Mapped["Ticker"] = relationship("Ticker", back_populates="news_articles")
@@ -48,9 +81,6 @@ class SentimentScore(Base):
 
     id: Mapped[int] = Column(Integer, primary_key=True)
     date: Mapped[str] = Column(String)
-    vader_sentiment: Mapped[str] = Column(String)
-    gpt_sentiment: Mapped[str] = Column(String)
-    gpt_response: Mapped[str] = Column(String)
 
     historical_price_high: Mapped[float] = Column(Float)
     historical_price_low: Mapped[float] = Column(Float)
@@ -68,3 +98,6 @@ class SentimentScore(Base):
 
     def __repr__(self) -> str:
         return f"<SentimentScore(ticker={self.ticker}, date={self.date})>"
+
+
+Base.metadata.create_all(bind=engine)

@@ -1,16 +1,16 @@
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
+from typing import Tuple
 
 from sqlalchemy.orm import sessionmaker
 
-from sastocks.config import database_engine
-from sastocks.logger import logger
-from sastocks.models import SentimentScore
-from sastocks.models import Ticker
+from sastocks.console import console
+from sastocks.database import engine
+from sastocks.models import SentimentScore, Ticker
 from sastocks.polygon_client import PolygonClient
 
 # Create a session factory using the database engine from the config module
-DatabaseSession = sessionmaker(bind=database_engine)
+DatabaseSession = sessionmaker(bind=engine)
 
 # Load the Polygon API key from the environment variable
 API_KEY = os.environ.get("POLYGON_API_KEY")
@@ -19,69 +19,68 @@ API_KEY = os.environ.get("POLYGON_API_KEY")
 polygon_client = PolygonClient(api_key=API_KEY)
 
 
-def pull_financials(date=None):
-    logger.info("Starting to pull financial data...")
-    # Use the provided date or default to today's date if no date is provided
-    date = date or datetime.now().strftime("%Y-%m-%d")
+def pull_financials(date_range: Tuple[str, str] = None):
+    """Pull financial data for all tickers and save them to the database."""
+    console.info("Starting to pull financial data...")
+    # Parse the start and end dates from the date_range parameter
+    start_date = datetime.strptime(date_range[0], "%Y-%m-%d")
+    end_date = datetime.strptime(date_range[1], "%Y-%m-%d")
 
-    # Establish a session with the database
-    with DatabaseSession() as session:
+    # Iterate over each day within the date range
+    current_date = start_date
+    while current_date <= end_date:
+        date_str = current_date.strftime("%Y-%m-%d")
+
+        # Establish a session with the database
+
         # Retrieve all tickers from the database
-        tickers = session.query(Ticker).all()
+        tickers = Ticker.query().all()
 
         # Process each ticker
         for ticker in tickers:
-            try:
-                # Retrieve financial data using PolygonClient
-                rsi_data = polygon_client.get_rsi(ticker.symbol)
-                macd_data = polygon_client.get_macd(ticker.symbol)
-                open_close_data = polygon_client.get_open_close(ticker.symbol, date)
+            # Retrieve financial data using PolygonClient
+            rsi_data = polygon_client.get_rsi(ticker.symbol)
+            macd_data = polygon_client.get_macd(ticker.symbol)
+            open_close_data = polygon_client.get_open_close(ticker.symbol, date_str)
 
-                # Combine the data
-                combined_data = {
-                    "date": datetime.strptime(date, "%Y-%m-%d").date(),
-                    "ticker_id": ticker.id,
-                    "rsi": rsi_data.get("results", {})
-                    .get("values", [])[0]
-                    .get("value"),
-                    "macd": macd_data.get("results", {})
-                    .get("values", [])[0]
-                    .get("value"),
-                    "historical_price_high": open_close_data.get("high"),
-                    "historical_price_low": open_close_data.get("low"),
-                    "historical_price_open": open_close_data.get("open"),
-                    "historical_price_close": open_close_data.get("close"),
-                    "historical_price_after_hours": open_close_data.get("afterHours"),
-                    "historical_price_volume": open_close_data.get("volume"),
-                }
+            # Combine the data
+            combined_data = {
+                "date": current_date.date(),
+                "ticker_id": ticker.id,
+                "rsi": rsi_data.get("results", {}).get("values", [])[0].get("value"),
+                "macd": macd_data.get("results", {}).get("values", [])[0].get("value"),
+                "historical_price_high": open_close_data.get("high"),
+                "historical_price_low": open_close_data.get("low"),
+                "historical_price_open": open_close_data.get("open"),
+                "historical_price_close": open_close_data.get("close"),
+                "historical_price_after_hours": open_close_data.get("afterHours"),
+                "historical_price_volume": open_close_data.get("volume"),
+            }
 
-                # Check if there is already a record for this ticker and date
-                existing_score = (
-                    session.query(SentimentScore)
-                    .filter_by(ticker_id=ticker.id, date=combined_data["date"])
-                    .first()
+            # Check if there is already a record for this ticker and date
+            existing_score = (
+                SentimentScore.query()
+                .filter_by(ticker_id=ticker.id, date=combined_data["date"])
+                .first()
+            )
+            if existing_score:
+                # Update the existing record with the new data
+                existing_score.update(existing_score.id, kwargs=combined_data.items())
+                console.info(
+                    f"Updated financial data for ticker: {ticker.symbol} on date: {combined_data['date']}"
                 )
-                if existing_score:
-                    # Update the existing record with the new data
-                    for key, value in combined_data.items():
-                        setattr(existing_score, key, value)
-                    logger.info(
-                        f"Updated financial data for ticker: {ticker.symbol} on date: {combined_data['date']}"
-                    )
-                else:
-                    # Create a new SentimentScore object with the combined data
-                    sentiment_score = SentimentScore(**combined_data)
-                    # Add the new object to the session
-                    session.add(sentiment_score)
-                    logger.info(
-                        f"Added new financial data for ticker: {ticker.symbol} on date: {combined_data['date']}"
-                    )
-                # Commit the changes to the database
-                session.commit()
-                logger.info(
-                    f"Successfully pulled financial data for ticker: {ticker.symbol}"
+            else:
+                # Create a new SentimentScore object with the combined data
+                SentimentScore().create(**combined_data)
+                console.info(
+                    f"Added new financial data for ticker: {ticker.symbol} on date: {combined_data['date']}"
                 )
-            except Exception as e:
-                logger.error(f"An error occurred while pulling financial data: {e}")
 
-    logger.info("Finished pulling financial data.")
+            console.info(
+                f"Successfully pulled financial data for ticker: {ticker.symbol}"
+            )
+
+        # Move to the next day
+        current_date += timedelta(days=1)
+
+    console.info("Finished pulling financial data.")

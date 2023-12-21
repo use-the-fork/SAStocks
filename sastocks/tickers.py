@@ -1,5 +1,4 @@
-from sastocks.config import DatabaseSession
-from sastocks.logger import logger
+from sastocks.console import console
 from sastocks.models import Ticker
 from sastocks.polygon_client import PolygonClient
 
@@ -19,26 +18,22 @@ def add_ticker(symbol: str):
         # Use PolygonClient to get ticker details
         ticker_details = polygon_client.get_ticker_details(symbol)
         if ticker_details.get("status") != "OK":
-            logger.error(f"Invalid symbol or error retrieving details: {symbol}")
+            console.error(f"Invalid symbol or error retrieving details: {symbol}")
             return
     except ValueError as e:
-        logger.error(f"Error validating symbol: {symbol}. Exception: {e}")
+        console.error(f"Error validating symbol: {symbol}. Exception: {e}")
         return
 
-    with DatabaseSession() as session:
-        try:
-            # Check if the symbol already exists in the database
-            existing_ticker = session.query(Ticker).filter_by(symbol=symbol).first()
-            if existing_ticker:
-                logger.info(f"Symbol '{symbol}' already exists in the database.")
-                return
+    try:
+        # Check if the symbol already exists in the database
+        existing_ticker = Ticker.query().filter_by(symbol=symbol).first()
+        if existing_ticker:
+            console.info(f"Symbol '{symbol}' already exists in the database.")
+            return
 
-            # Extract the name and other details from PolygonClient ticker details
-            name = ticker_details["results"].get("name", "Unknown")
-            new_ticker = Ticker(symbol=symbol, name=name)
-            session.add(new_ticker)
-            session.commit()
-            logger.info(f"Ticker '{symbol}' added successfully.")
-        except Exception as e:
-            logger.error(f"Failed to add ticker '{symbol}'. Exception: {e}")
-            session.rollback()
+        # Extract the name and other details from PolygonClient ticker details
+        name = ticker_details["results"].get("name", "Unknown")
+        Ticker().create(symbol=symbol, name=name)
+        console.info(f"Ticker '{symbol}' added successfully.")
+    except Exception as e:
+        console.error(f"Failed to add ticker '{symbol}'. Exception: {e}")

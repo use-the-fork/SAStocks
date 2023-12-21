@@ -1,10 +1,9 @@
 # Get required components
 import os
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
-from sastocks.config import DatabaseSession
-from sastocks.logger import logger
+from sastocks.console import console
 from sastocks.models import NewsArticle
 from sastocks.models import Ticker
 from sastocks.polygon_client import PolygonClient
@@ -19,9 +18,8 @@ def load_tickers() -> List[Ticker]:
     Returns:
         List[Ticker]: A list of Ticker objects.
     """
-    with DatabaseSession() as session:
-        tickers = session.query(Ticker).all()
-        return tickers
+    tickers = Ticker.query().all()
+    return tickers
 
 
 def save_news_to_db(
@@ -50,42 +48,40 @@ def save_news_to_db(
         image_url (str): The URL of the article's image.
         amp_url (str): The AMP URL of the article.
     """
-    with DatabaseSession() as session:
-        # Check if the article already exists in the database
-        existing_article = session.query(NewsArticle).filter_by(url=article_url).first()
-        if existing_article:
-            logger.info(f"Article '{title}' already exists in database.")
-            return
 
-        # Create a new NewsArticle instance
-        new_article = NewsArticle(
-            date=date,
-            title=title,
-            description=description,
-            url=article_url,
-            author=author,
-            keywords=keywords,
-            publisher=publisher,
-            ticker_id=ticker.id,
-            image_url=image_url,
-            amp_url=amp_url,
-        )
-        session.add(new_article)
-        session.commit()
-        logger.info(f"Article '{title}' added successfully to the database.")
+    # Check if the article already exists in the database
+    existing_article = NewsArticle.query().filter_by(url=article_url).first()
+    if existing_article:
+        console.info(f"Article '{title}' already exists in database.")
+        return
+
+    # Create a new NewsArticle instance
+    NewsArticle().create(
+        date=date,
+        title=title,
+        description=description,
+        url=article_url,
+        author=author,
+        keywords=keywords,
+        publisher=publisher,
+        ticker_id=ticker.id,
+        image_url=image_url,
+        amp_url=amp_url,
+    )
+    console.info(f"Article '{title}' added successfully to the database.")
 
 
 def process_api_response(api_response, ticker: Ticker):
     if api_response.get("status") != "OK":
-        logger.error(
+        console.error(
             f"Error: {api_response.get('status')} - {api_response.get('error')}"
         )
         return
     for result in api_response["results"]:
         date = datetime.strptime(result["published_utc"], "%Y-%m-%dT%H:%M:%SZ").date()
-        title = result["title"]
-        description = result["description"]
-        article_url = result["article_url"]
+        title = result.get("title", "")
+        description = result.get("description", "")
+        article_url = result.get("article_url", "")
         author = result.get(
             "author", "Unknown"
         )  # Use a default value if author is not provided
@@ -115,11 +111,7 @@ def process_api_response(api_response, ticker: Ticker):
         )
 
 
-def pull_news(
-    timestamp: str = (datetime.utcnow() - timedelta(days=1)).strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
-    ),
-):
+def pull_news(date_range: Tuple[str, str] = None):
     """Pull news for all tickers and save them to the database."""
     # Ensure the POLYGON_API_KEY is available
     if not polygon_key:
@@ -128,30 +120,40 @@ def pull_news(
     # Instantiate PolygonClient
     polygon_client = PolygonClient(api_key=polygon_key)
 
-    # Use provided timestamp or set to yesterday's date if not provided
-    if not timestamp:
-        timestamp = (datetime.utcnow() - timedelta(days=1)).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
+    # Parse the start and end dates from the date_range parameter
+    start_date = datetime.strptime(date_range[0], "%Y-%m-%d")
+    end_date = datetime.strptime(date_range[1], "%Y-%m-%d")
+
+    # Iterate over each day within the date range
+    current_date = start_date
+    while current_date <= end_date:
+        timestamp = current_date.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        # Load the tickers
+        tickers = load_tickers()
+
+        # Download news articles for all tickers
+        console.info(
+            f"Importing and Filtering News from Polygon.io for all tickers for date {current_date.date()}"
         )
+        for i, ticker in enumerate(tickers, start=1):
+            console.info(f"Importing news for ticker #{i}: {ticker.symbol}")
 
-    # Load the tickers
-    tickers = load_tickers()
+            # Execute the request, get the response and process it
+            try:
+                api_response = polygon_client.get_news(
+                    ticker.symbol, published_utc=timestamp
+                )
+                process_api_response(api_response, ticker)
+            except Exception as e:
+                console.error(
+                    f"An error occurred while processing {ticker.symbol}: {e}"
+                )
+                continue
 
-    # Download news articles for all tickers
-    logger.info("Importing and Filtering News from Polygon.io for all tickers")
-    for i, ticker in enumerate(tickers, start=1):
-        logger.info(f"Importing news for ticker #{i}: {ticker.symbol}")
+            console.info(f"Finished importing and filtering news for {ticker.symbol}")
 
-        # Execute the request, get the response and process it
-        try:
-            api_response = polygon_client.get_news(
-                ticker.symbol, published_utc=timestamp
-            )
-            process_api_response(api_response, ticker)
-        except Exception as e:
-            logger.error(f"An error occurred while processing {ticker.symbol}: {e}")
-            continue
+        # Move to the next day
+        current_date += timedelta(days=1)
 
-        logger.info(f"Finished importing and filtering news for {ticker.symbol}")
-
-    logger.info("News Capture Completed - Database Prepared")
+    console.info("News Capture Completed - Database Prepared")
